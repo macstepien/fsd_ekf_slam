@@ -1,16 +1,16 @@
 #include <ros/ros.h>
 
-#include "ekf_slam.h"
+#include <ekf_slam/ekf_slam.h>
 
-int main(int argc, char **argv) 
+int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "ekf_slam");
-    ros::NodeHandle node("~");
+  ros::init(argc, argv, "ekf_slam");
+  ros::NodeHandle node("~");
 
-    EKF_SLAM poseEstimator(node);
+  EkfSlam ekf_slam(node);
 
-    ros::Subscriber scanSub;
-    scanSub = node.subscribe("/scan", 10, &EKF_SLAM::updatePosition, &poseEstimator);
+  ros::Subscriber scan_sub;
+  scan_sub = node.subscribe("/scan", 10, &EkfSlam::processScan, &ekf_slam);
 
-    ros::spin();
+  ros::spin();
 }

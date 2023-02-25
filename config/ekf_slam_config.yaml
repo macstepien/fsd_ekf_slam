@@ -1,11 +1,16 @@
-odometryNoiseX: 0.05
-odometryNoiseY: 0.05
-odometryNoiseTheta: 5
-observationNoiseX: 0.05
-observationNoiseY: 0.05
-coneMatchingMaxDistance: 0.3
-minLidarRange: 0.1
-maxLidarRange: 20.0
-minClusterSize: 2
-maxClusterSize: 250
-clusterToleranceDistance: 0.2
+odometry_noise_x: 0.05 # [m]
+odometry_noise_y: 0.05 # [m]
+odometry_noise_theta: 5.0 # [degrees]
+
+observation_noise_x: 0.05 # [m]
+observation_noise_y: 0.05 # [m]
+
+cone_matching_max_distance: 0.3 # [m]
+
+min_lidar_range: 0.1 # [m]
+max_lidar_range: 20.0 # [m]
+
+min_cluster_size: 2
+max_cluster_size: 250
+
+cluster_tolerance_distance: 0.2 # [m]

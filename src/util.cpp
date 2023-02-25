@@ -1,7 +1,8 @@
-#include "util.h"
+#include <ekf_slam/util.h>
+
 #include <cmath>
 
-double minus_pi_to_pi(double alfa)
+double BoundToMinusPiPi(double angle)
 {
-    return remainder(alfa, 2.0 * M_PI);
+  return remainder(angle, 2.0 * M_PI);
 }
