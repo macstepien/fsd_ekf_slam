@@ -7,6 +7,7 @@
 
 #include <string>
 #include <limits>
+#include <memory>
 #include <cmath>
 
 #include <tf/tf.h>
@@ -15,27 +16,14 @@
 
 EkfSlam::EkfSlam(ros::NodeHandle& node) : tf_listener_(tf_buffer_)
 {
-  odometry_noise_.setZero();
-  observation_noise_.setZero();
+  last_odom_position_.setZero();
 
-  int max_state_size = kRobotStateSize + kMaxNumObservations * kObservationSize;
-
-  observation_jacobian_ = Eigen::MatrixXf::Zero(kObservationSize, max_state_size);
-
-  means_ = Eigen::MatrixXf::Zero(max_state_size, 1);
-  covariances_ = Eigen::MatrixXf::Zero(max_state_size, max_state_size);
-
-  odom_position_.setZero();
-  position_estimate_.setZero();
-
-  setParameters(node);
+  parseParameters(node);
 
   getLidarBaseLinkTransform();
 
   speed_from_odom_ = 0;
   last_odom_timestamp_ = ros::Time::now();
-
-  observations_count_ = 0;
 
   visualization_ = true;
 
@@ -44,180 +32,58 @@ EkfSlam::EkfSlam(ros::NodeHandle& node) : tf_listener_(tf_buffer_)
 
   //! Allow initial position from odometry - useful for testing
   odometryMeasurment();
-  means_.block<kRobotStateSize, 1>(0, 0) = odom_position_;
+  ekf_ = std::make_unique<Ekf>(last_odom_position_, odometry_noise_, observation_noise_);
 }
 
 void EkfSlam::processScan(const sensor_msgs::LaserScan::ConstPtr& scan)
 {
   ROS_DEBUG("Starting position update");
-
   Eigen::Vector3f odometry_measurement = odometryMeasurment();
+  ROS_DEBUG_STREAM("Odometry obtained, position: " << last_odom_position_);
+  ROS_DEBUG_STREAM("Odometry change: " << odometry_measurement);
 
-  ROS_DEBUG_STREAM("Odometry obtained, position: " << odom_position_);
+  ekf_->predict(odometry_measurement);
 
   std::vector<Observation> observations = cone_detector_.detectCones(scan);
   if (visualization_)
   {
     publishDetectedCones(observations);
   }
-
   ROS_DEBUG_STREAM("Detected: " << observations.size() << " cones");
 
-  update(observations, odometry_measurement);
+  // std::vector<std::pair<Observation, int>> observation_pairs;
+  for (auto obs : observations)
+  {
+    try
+    {
+      std::pair<int, float> matching_observation = ekf_->findClosestObservation(obs);
+
+      float observation_matchin_threshold = observation_matching_max_distance_ *
+                                            (speed_from_odom_ > scaling_speed_ ? speed_from_odom_ / scaling_speed_ : 1);
+      if (matching_observation.second < observation_matchin_threshold)
+      {
+        ROS_DEBUG_STREAM("Found matching cones!");
+        // observation_pairs.push_back(std::make_pair(obs, matching_observation.first));
+        ekf_->updatePositionFromObservation(obs, matching_observation.first);
+      }
+      else
+      {
+        ekf_->addNewObservation(obs);
+      }
+    }
+    catch (const std::runtime_error& e)
+    {
+      ekf_->addNewObservation(obs);
+    }
+  }
+
+  // ekf_->update(observation_pairs);
 
   publishPosition();
   if (visualization_)
   {
     publishConesMap();
   }
-}
-
-void EkfSlam::update(const std::vector<Observation>& observations, Eigen::Vector3f odometry_measurement)
-{
-  // Prediction
-
-  // Mean prediction
-  means_.block<kRobotStateSize, 1>(0, 0) += odometry_measurement;
-  means_(2) = BoundToMinusPiPi(means_(2));
-
-  // Covariance update
-  Eigen::Matrix3f G = Eigen::Matrix3f::Identity();
-  G(0, 2) -= odometry_measurement(1);
-  G(1, 2) += odometry_measurement(0);
-
-  covariances_.block<kRobotStateSize, kRobotStateSize>(0, 0) =
-      G * covariances_.block<kRobotStateSize, kRobotStateSize>(0, 0) * G.transpose() + odometry_noise_;
-  covariances_.block(0, kRobotStateSize, kRobotStateSize, observations_count_ * kObservationSize) =
-      G * covariances_.block(0, kRobotStateSize, kRobotStateSize, observations_count_ * kObservationSize);
-
-  for (auto obs : observations)
-  {
-    int matching_observation_index = -1;
-    if (observations_count_ > 0)
-    {
-      matching_observation_index = findMatchingObservation(obs);
-    }
-
-    if (matching_observation_index < 0)
-    {
-      addNewObservation(obs);
-    }
-    else
-    {
-      updatePositionFromObservation(obs, matching_observation_index);
-    }
-  }
-
-  position_estimate_ = means_.block<kRobotStateSize, 1>(0, 0);
-
-  ROS_DEBUG_STREAM("Finished position update, new position: " << position_estimate_);
-}
-
-void EkfSlam::addNewObservation(const Observation& observation)
-{
-  int new_observation_index_x = kRobotStateSize + observations_count_ * kObservationSize;
-  int new_observation_index_y = kRobotStateSize + observations_count_ * kObservationSize + 1;
-
-  // Observation positions are stored in global coordinate frame (and first 3 values of means_
-  // is current position of the robot).
-  means_(new_observation_index_x, 0) = means_(0) + observation.r * cos(means_(2) + observation.angle);
-  means_(new_observation_index_y, 0) = means_(1) + observation.r * sin(means_(2) + observation.angle);
-
-  ROS_DEBUG_STREAM("Found new observation, coordinates x: " << means_(new_observation_index_x, 0)
-                                                            << "y: " << means_(new_observation_index_y, 0));
-
-  covariances_(new_observation_index_x, new_observation_index_x) = 1;
-  covariances_(new_observation_index_y, new_observation_index_y) = 1;
-
-  ++observations_count_;
-}
-
-void EkfSlam::updatePositionFromObservation(const Observation& cone, int matched_index)
-{
-  // Calculate Expected Measurment
-  float x_expected = means_(kRobotStateSize + matched_index * kObservationSize) - means_(0);
-  float y_expected = means_(kRobotStateSize + matched_index * kObservationSize + 1) - means_(1);
-
-  float r_squared_expected = pow(x_expected, 2) + pow(y_expected, 2);
-  float r_expected = sqrt(r_squared_expected);
-
-  // If update distance is too small, then there are problems with division in observation_jacobian_robot_state_part and
-  // observation_jacobian_observation_part matrices
-  if (fabs(r_expected - cone.r) > 0.01)
-  {
-    float angle_expected = BoundToMinusPiPi(atan2(y_expected, x_expected) - means_(2));
-    Eigen::Vector2f z_expected = Eigen::Vector2f(r_expected, angle_expected);
-    Eigen::Vector2f z_real = Eigen::Vector2f(cone.r, cone.angle);
-
-    // Observation Jacobian
-    Eigen::MatrixXf observation_jacobian_robot_state_part = Eigen::MatrixXf::Zero(kObservationSize, kRobotStateSize);
-    Eigen::MatrixXf observation_jacobian_observation_part = Eigen::MatrixXf::Zero(kObservationSize, kObservationSize);
-    observation_jacobian_robot_state_part << -r_expected * x_expected / r_squared_expected,
-        -r_expected * y_expected / r_squared_expected, 0, y_expected / r_squared_expected,
-        -x_expected / r_squared_expected, -1;
-    observation_jacobian_observation_part << r_expected * x_expected / r_squared_expected,
-        r_expected * y_expected / r_squared_expected, -y_expected / r_squared_expected, x_expected / r_squared_expected;
-    observation_jacobian_.block<kObservationSize, kRobotStateSize>(0, 0) = observation_jacobian_robot_state_part;
-    observation_jacobian_.block<kObservationSize, kObservationSize>(
-        0, kRobotStateSize + matched_index * kObservationSize) = observation_jacobian_observation_part;
-
-    int current_size = kRobotStateSize + observations_count_ * kObservationSize;
-    Eigen::MatrixXf covariances_block = covariances_.block(0, 0, current_size, current_size);
-    Eigen::MatrixXf observation_jacobian_block = observation_jacobian_.block(0, 0, kObservationSize, current_size);
-    Eigen::MatrixXf kalman_gain =
-        covariances_block * observation_jacobian_block.transpose() *
-        (observation_jacobian_block * covariances_block * observation_jacobian_block.transpose() + observation_noise_)
-            .inverse();
-
-    Eigen::Vector2f dz = z_real - z_expected;
-    dz(1) = BoundToMinusPiPi(dz(1));
-
-    means_.block(0, 0, current_size, 1) += kalman_gain * (dz);
-    covariances_.block(0, 0, current_size, current_size) =
-        (Eigen::MatrixXf::Identity(current_size, current_size) - kalman_gain * observation_jacobian_block) *
-        covariances_block;
-
-    observation_jacobian_.block<kObservationSize, kRobotStateSize>(0, 0) =
-        Eigen::MatrixXf::Zero(kObservationSize, kRobotStateSize);
-    observation_jacobian_.block<kObservationSize, kObservationSize>(0, kRobotStateSize +
-                                                                           kObservationSize * matched_index) =
-        Eigen::MatrixXf::Zero(kObservationSize, kObservationSize);
-  }
-}
-
-int EkfSlam::findMatchingObservation(const Observation& position)
-{
-  float x_mean, y_mean, r_mean, angle_mean, distance;
-  float x_detected = position.r * cos(position.angle);
-  float y_detected = position.r * sin(position.angle);
-  for (int index = 0; index < observations_count_; ++index)
-  {
-    x_mean = means_(kRobotStateSize + index * kObservationSize) - means_(0);
-    y_mean = means_(kRobotStateSize + index * kObservationSize + 1) - means_(1);
-
-    r_mean = sqrt(pow(x_mean, 2) + pow(y_mean, 2));
-    angle_mean = BoundToMinusPiPi(atan2(y_mean, x_mean) - means_(2));
-
-    x_mean = r_mean * cos(angle_mean);
-    y_mean = r_mean * sin(angle_mean);
-
-    distance = sqrt(pow(x_detected - x_mean, 2) + pow(y_detected - y_mean, 2));
-
-    if (speed_from_odom_ < 0 || speed_from_odom_ > 10 || std::isnan(speed_from_odom_))
-    {
-      speed_from_odom_ = 0;
-    }
-
-    float observation_matchin_threshold = observation_matching_max_distance_ *
-                                          (speed_from_odom_ > scaling_speed_ ? speed_from_odom_ / scaling_speed_ : 1);
-    if (distance < observation_matchin_threshold)
-    {
-      return index;
-    }
-  }
-  // Matching cone not found
-  // TODO: change to exception
-  return -1;
 }
 
 Eigen::Vector3f EkfSlam::odometryMeasurment()
@@ -230,7 +96,7 @@ Eigen::Vector3f EkfSlam::odometryMeasurment()
     // Time::now() - current time
     // TODO: change to parameters
     odom_base_footprint_transform =
-        tf_buffer_.lookupTransform("base_footprint", "odom", ros::Time(0), ros::Duration(10.0));
+        tf_buffer_.lookupTransform("odom", "base_footprint", ros::Time(0), ros::Duration(10.0));
   }
   catch (tf::TransformException& ex)
   {
@@ -244,44 +110,50 @@ Eigen::Vector3f EkfSlam::odometryMeasurment()
   float odom_base_footprint_yaw = odom_base_footprint_quaternion.toRotationMatrix().eulerAngles(0, 1, 2)(2);
 
   Eigen::Vector3f odom_position_change;
-  odom_position_change(0) = (odom_position_(0) - odom_base_footprint_transform.transform.translation.x);
-  odom_position_change(1) = (odom_position_(1) - odom_base_footprint_transform.transform.translation.y);
-  odom_position_change(2) = BoundToMinusPiPi(odom_position_(2) - odom_base_footprint_yaw);
+  odom_position_change(0) = (odom_base_footprint_transform.transform.translation.x - last_odom_position_(0));
+  odom_position_change(1) = (odom_base_footprint_transform.transform.translation.y - last_odom_position_(1));
+  odom_position_change(2) = BoundToMinusPiPi(odom_base_footprint_yaw - last_odom_position_(2));
 
-  odom_position_(0) = odom_base_footprint_transform.transform.translation.x;
-  odom_position_(1) = odom_base_footprint_transform.transform.translation.y;
-  odom_position_(2) = BoundToMinusPiPi(odom_base_footprint_yaw);
+  last_odom_position_(0) = odom_base_footprint_transform.transform.translation.x;
+  last_odom_position_(1) = odom_base_footprint_transform.transform.translation.y;
+  last_odom_position_(2) = BoundToMinusPiPi(odom_base_footprint_yaw);
 
   float time_diff = (odom_base_footprint_transform.header.stamp - last_odom_timestamp_).toSec();
   speed_from_odom_ = sqrt(pow(odom_position_change(0), 2) + pow(odom_position_change(1), 2)) / time_diff;
   last_odom_timestamp_ = odom_base_footprint_transform.header.stamp;
 
   ROS_DEBUG_STREAM("Speed from odom: " << speed_from_odom_);
+  if (speed_from_odom_ < 0 || speed_from_odom_ > 10 || std::isnan(speed_from_odom_))
+  {
+    speed_from_odom_ = 0;
+  }
 
   return odom_position_change;
 }
 
 void EkfSlam::publishPosition()
 {
+  Eigen::Vector3f position_estimate = ekf_->getCurrentPositionEstimate();
+
   geometry_msgs::TransformStamped map_base_link_transform;
   map_base_link_transform.header.stamp = ros::Time::now();
   map_base_link_transform.header.frame_id = "map";
   map_base_link_transform.child_frame_id = "base_link";
-  map_base_link_transform.transform.translation.x = position_estimate_(0);
-  map_base_link_transform.transform.translation.y = position_estimate_(1);
+  map_base_link_transform.transform.translation.x = position_estimate(0);
+  map_base_link_transform.transform.translation.y = position_estimate(1);
   map_base_link_transform.transform.translation.z = 0.0;
 
-  map_base_link_transform.transform.rotation.w = cos(position_estimate_(2) * 0.5);
+  map_base_link_transform.transform.rotation.w = cos(position_estimate(2) * 0.5);
   map_base_link_transform.transform.rotation.x = 0;
   map_base_link_transform.transform.rotation.y = 0;
-  map_base_link_transform.transform.rotation.z = sin(position_estimate_(2) * 0.5);
+  map_base_link_transform.transform.rotation.z = sin(position_estimate(2) * 0.5);
 
   tf_broadcaster_.sendTransform(map_base_link_transform);
 
   geometry_msgs::Pose2D robot_pose;
-  robot_pose.x = position_estimate_(0);
-  robot_pose.y = position_estimate_(1);
-  robot_pose.theta = position_estimate_(2);
+  robot_pose.x = position_estimate(0);
+  robot_pose.y = position_estimate(1);
+  robot_pose.theta = position_estimate(2);
 
   position_pub_.publish(robot_pose);
 }
@@ -323,10 +195,11 @@ void EkfSlam::publishDetectedCones(const std::vector<Observation>& cones)
 
 void EkfSlam::publishConesMap()
 {
-  for (int i = 0; i < observations_count_; ++i)
+  Eigen::VectorXf observations = ekf_->getCurrentObservationsEstimate();
+  for (int i = 0; i < observations.size() / 2; ++i)
   {
-    float x = means_(kRobotStateSize + i * kObservationSize);
-    float y = means_(kRobotStateSize + i * kObservationSize + 1);
+    float x = observations(i * 2);
+    float y = observations(i * 2 + 1);
 
     geometry_msgs::Point point;
     point.x = x;
@@ -391,41 +264,41 @@ void EkfSlam::getLidarBaseLinkTransform()
   cone_detector_.setLidarBaseLinkTransformation(lidar_to_base_link_translation, lidar_to_base_link_quaternion);
 }
 
-void EkfSlam::setParameters(ros::NodeHandle& node)
+void EkfSlam::parseParameters(ros::NodeHandle& node)
 {
-  if (!node.getParam("odometry_noise_x", odometry_noise_(0, 0)))
+  if (!node.getParam("odometry_noise_x", odometry_noise_(0)))
   {
     ROS_WARN("Couldn't get odometry_noise_x parameter, setting to default 0.05 [m]");
-    odometry_noise_(0, 0) = 0.05;
+    odometry_noise_(0) = 0.05;
   }
 
-  if (!node.getParam("odometry_noise_y", odometry_noise_(1, 1)))
+  if (!node.getParam("odometry_noise_y", odometry_noise_(1)))
   {
     ROS_WARN("Couldn't get odometry_noise_y parameter, setting to default 0.05 [m]");
-    odometry_noise_(1, 1) = 0.05;
+    odometry_noise_(1) = 0.05;
   }
   float odometry_noise_theta_degrees;
   if (!node.getParam("odometry_noise_theta", odometry_noise_theta_degrees))
   {
     ROS_WARN("Couldn't get odometry_noise_theta parameter, setting to default 5 [degrees]");
-    odometry_noise_(2, 2) = (5. * M_PI) / 180.;
+    odometry_noise_(2) = (5. * M_PI) / 180.;
   }
   else
   {
-    odometry_noise_(2, 2) = (odometry_noise_theta_degrees * M_PI) / 180.;
+    odometry_noise_(2) = (odometry_noise_theta_degrees * M_PI) / 180.;
   }
 
   ROS_DEBUG_STREAM("Odometry noise: " << odometry_noise_);
 
-  if (!node.getParam("observation_noise_x", observation_noise_(0, 0)))
+  if (!node.getParam("observation_noise_x", observation_noise_(0)))
   {
     ROS_WARN("Couldn't get observation_noise_x parameter, setting to default 0.05 [m]");
-    observation_noise_(0, 0) = 0.05;
+    observation_noise_(0) = 0.05;
   }
-  if (!node.getParam("observation_noise_y", observation_noise_(1, 1)))
+  if (!node.getParam("observation_noise_y", observation_noise_(1)))
   {
     ROS_WARN("Couldn't get observation_noise_y parameter, setting to default 0.05 [m]");
-    observation_noise_(1, 1) = 0.05;
+    observation_noise_(1) = 0.05;
   }
 
   ROS_DEBUG_STREAM("Observation noise: " << observation_noise_);

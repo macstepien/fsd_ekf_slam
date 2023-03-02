@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ekf_slam)
 
-## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++11)
+set(CMAKE_CXX_STANDARD 14)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -23,7 +22,7 @@ include_directories(
 
 link_directories(${PCL_LIBRARY_DIRS})
 
-add_executable(ekf_slam_node src/ekf_slam_node.cpp src/ekf_slam.cpp 
+add_executable(ekf_slam_node src/ekf_slam_node.cpp src/ekf_slam.cpp src/ekf.cpp 
   src/cone_detector.cpp src/util.cpp)
 
 target_link_libraries(ekf_slam_node

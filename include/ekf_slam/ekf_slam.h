@@ -7,7 +7,12 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <sensor_msgs/LaserScan.h>
-#include "cone_detector.h"
+
+#include <ekf_slam/cone_detector.h>
+#include <ekf_slam/ekf.h>
+#include <ekf_slam/util.h>
+
+#include <memory>
 
 class EkfSlam
 {
@@ -16,30 +21,20 @@ public:
   void processScan(const sensor_msgs::LaserScan::ConstPtr& scan);
 
 private:
-  static const int kMaxNumObservations = 1000;
-  static const int kObservationSize = 2;
-  static const int kRobotStateSize = 3;
-
   // TODO: parameter
   float scaling_speed_ = 0.8;
 
-  Eigen::Matrix3f odometry_noise_;
-  Eigen::Matrix2f observation_noise_;
-  Eigen::MatrixXf observation_jacobian_;
+  Eigen::Vector3f odometry_noise_;
+  Eigen::Vector2f observation_noise_;
 
-  Eigen::MatrixXf means_;
-  Eigen::MatrixXf covariances_;
-
-  Eigen::Vector3f odom_position_;
-  Eigen::Vector3f position_estimate_;
+  Eigen::Vector3f last_odom_position_;
+  ros::Time last_odom_timestamp_;
 
   ConeDetector cone_detector_;
+  std::unique_ptr<Ekf> ekf_;
 
   float observation_matching_max_distance_;
   float speed_from_odom_;
-  ros::Time last_odom_timestamp_;
-
-  int observations_count_;
 
   bool visualization_;
 
@@ -50,15 +45,11 @@ private:
   tf2_ros::TransformListener tf_listener_;
   tf2_ros::TransformBroadcaster tf_broadcaster_;
 
-  void setParameters(ros::NodeHandle& node);
+  void parseParameters(ros::NodeHandle& node);
   void getLidarBaseLinkTransform();
-
-  void update(const std::vector<Observation>& observations, Eigen::Vector3f odometry_measurement);
 
   Eigen::Vector3f odometryMeasurment();
   int findMatchingObservation(const Observation& position);
-  void addNewObservation(const Observation& cone);
-  void updatePositionFromObservation(const Observation& cone, int matchedIndex);
 
   // TF and /slam_pose publishing
   void publishPosition();

@@ -1,11 +1,11 @@
 odometry_noise_x: 0.05 # [m]
 odometry_noise_y: 0.05 # [m]
-odometry_noise_theta: 5.0 # [degrees]
+odometry_noise_theta: 1.0 # [degrees]
 
-observation_noise_x: 0.05 # [m]
-observation_noise_y: 0.05 # [m]
+observation_noise_x: 0.08 # [m]
+observation_noise_y: 0.08 # [m]
 
-cone_matching_max_distance: 0.3 # [m]
+cone_matching_max_distance: 0.2 # [m]
 
 min_lidar_range: 0.1 # [m]
 max_lidar_range: 20.0 # [m]

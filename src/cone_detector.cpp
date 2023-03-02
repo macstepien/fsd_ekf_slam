@@ -211,15 +211,15 @@ bool ConeDetector::setClusterToleranceDistance(float cluster_tolerance_distance)
   {
     cluster_tolerance_distance_ = cluster_tolerance_distance;
     cluster_extractor_.setClusterTolerance(cluster_tolerance_distance_);
-    if (cluster_tolerance_distance_ > 0.2)
+    if (cluster_tolerance_distance_ > 0.25)
     {
-      ROS_WARN("cluster_tolerance_distance_ parameter could be too big (less than 0.2 [m])");
+      ROS_WARN("cluster_tolerance_distance parameter could be too big (more than 0.25 [m])");
     }
     return true;
   }
   else
   {
-    ROS_ERROR("cluster_tolerance_distance_ parameter should be positive, setting to defult 0.1 [m]");
+    ROS_ERROR("cluster_tolerance_distance parameter should be positive, setting to defult 0.1 [m]");
     cluster_tolerance_distance_ = 0.1;
     cluster_extractor_.setClusterTolerance(cluster_tolerance_distance_);
     return false;
