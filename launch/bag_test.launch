@@ -1,0 +1,6 @@
+<launch>
+  <include file="$(find ekf_slam)/launch/ekf_slam.launch" />
+  <node pkg="rosbag" type="play" name="player" output="screen" args="$(find ekf_slam)/rosbags/przejazdTrackdrive.bag"/>
+  <arg name="rvizconfig" default="$(find ekf_slam)/rviz/ekf_slam.rviz" />
+  <node name="rviz_artag_detection" pkg="rviz" type="rviz" args="-d $(arg rvizconfig)" />
+</launch>
