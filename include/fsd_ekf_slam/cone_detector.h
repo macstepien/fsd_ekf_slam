@@ -23,6 +23,16 @@
 
 class ConeDetector
 {
+public:
+  ConeDetector();
+  void setLidarBaseLinkTransformation(Eigen::Vector3f translation, Eigen::Quaternionf quaternion);
+  bool setMinLidarRange(float min_range);
+  bool setMaxLidarRange(float max_range);
+  bool setMinClusterSize(int min_cluster_size);
+  bool setMaxClusterSize(int max_cluster_size);
+  bool setClusterToleranceDistance(float cluster_tolerance_distance);
+  std::vector<Observation> detectCones(const sensor_msgs::LaserScan::ConstPtr& scan);
+
 private:
   float min_lidar_range_;
   float max_lidar_range_;
@@ -35,16 +45,6 @@ private:
 
   Eigen::Quaternionf lidar_to_base_link_quaternion_;
   Eigen::Vector3f lidar_to_base_link_translation_;
-
-public:
-  ConeDetector();
-  void setLidarBaseLinkTransformation(Eigen::Vector3f translation, Eigen::Quaternionf quaternion);
-  bool setMinLidarRange(float min_range);
-  bool setMaxLidarRange(float max_range);
-  bool setMinClusterSize(int min_cluster_size);
-  bool setMaxClusterSize(int max_cluster_size);
-  bool setClusterToleranceDistance(float cluster_tolerance_distance);
-  std::vector<Observation> detectCones(const sensor_msgs::LaserScan::ConstPtr& scan);
 };
 
 #endif

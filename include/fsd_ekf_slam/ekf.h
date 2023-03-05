@@ -7,28 +7,19 @@
 
 #include <fsd_ekf_slam/util.h>
 
-
 class Ekf
 {
 public:
   Ekf(Eigen::Vector3f initial_position, Eigen::Vector3f odometry_noise, Eigen::Vector2f observation_noise);
 
-  void predict(Eigen::Vector3f odometry_measurement);
+  void predict(const Eigen::Vector3f& odometry_measurement);
   void update(const std::vector<std::pair<Observation, int>>& observations);
 
-  std::pair<int, float> findClosestObservation(const Observation& observation);
+  std::pair<int, float> findClosestObservation(const Observation& observation) const;
   void addNewObservation(const Observation& cone);
 
-  Eigen::Vector3f getCurrentPositionEstimate() const
-  {
-    return means_.block<kRobotStateSize, 1>(0, 0);
-  }
-
-  Eigen::VectorXf getCurrentObservationsEstimate() const
-  {
-    return means_.block(kRobotStateSize, 0, observations_count_ * kObservationSize, 1);
-  }
-  void updatePositionFromObservation(const Observation& cone, int matchedIndex);
+  Eigen::Vector3f getCurrentPositionEstimate() const;
+  Eigen::VectorXf getCurrentObservationsEstimate() const;
 
 private:
   static const int kMaxNumObservations = 1000;
@@ -43,6 +34,7 @@ private:
 
   int observations_count_;
 
+  void updatePositionFromObservation(const Observation& cone, int matched_index);
 };
 
 #endif

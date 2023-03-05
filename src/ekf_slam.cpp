@@ -49,8 +49,8 @@ void EkfSlam::processScan(const sensor_msgs::LaserScan::ConstPtr& scan)
   }
   ROS_DEBUG_STREAM("Detected: " << observations.size() << " cones");
 
-  // std::vector<std::pair<Observation, int>> observation_pairs;
-  for (auto obs : observations)
+  std::vector<std::pair<Observation, int>> observation_pairs;
+  for (const auto& obs : observations)
   {
     try
     {
@@ -61,8 +61,7 @@ void EkfSlam::processScan(const sensor_msgs::LaserScan::ConstPtr& scan)
       if (matching_observation.second < observation_matchin_threshold)
       {
         ROS_DEBUG_STREAM("Found matching cones!");
-        // observation_pairs.push_back(std::make_pair(obs, matching_observation.first));
-        ekf_->updatePositionFromObservation(obs, matching_observation.first);
+        observation_pairs.push_back(std::make_pair(obs, matching_observation.first));
       }
       else
       {
@@ -75,7 +74,7 @@ void EkfSlam::processScan(const sensor_msgs::LaserScan::ConstPtr& scan)
     }
   }
 
-  // ekf_->update(observation_pairs);
+  ekf_->update(observation_pairs);
 
   publishPosition();
   if (visualization_)

@@ -52,7 +52,6 @@ private:
   void getLidarBaseLinkTransform();
 
   Eigen::Vector3f odometryMeasurment();
-  int findMatchingObservation(const Observation& position);
 
   // TF and /slam_pose publishing
   void publishPosition();

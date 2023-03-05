@@ -38,15 +38,14 @@ void Ekf::predict(Eigen::Vector3f odometry_measurement)
   // make sure that angle stays in the (-pi, pi) range
 
   double r = sqrt(pow(odometry_measurement(0), 2) + pow(odometry_measurement(1), 2));
-  means_(0) += r*cos(means_(2));
-  means_(1) += r*sin(means_(2));
-
+  means_(0) += r * cos(means_(2));
+  means_(1) += r * sin(means_(2));
 
   // Predicted covariance estimate
   Eigen::Matrix3f G = Eigen::Matrix3f::Identity();
-  G(0, 2) -= r*sin(means_(2));
-  G(1, 2) += r*cos(means_(2));
-  
+  G(0, 2) -= r * sin(means_(2));
+  G(1, 2) += r * cos(means_(2));
+
   means_(2) = BoundToMinusPiPi(means_(2) + odometry_measurement(2));
 
   covariances_.block<kRobotStateSize, kRobotStateSize>(0, 0) =
@@ -130,7 +129,7 @@ void Ekf::updatePositionFromObservation(const Observation& observation, int matc
 
     Eigen::Vector2f dz = z_real - z_expected;
     dz(1) = BoundToMinusPiPi(dz(1));
-    
+
     ROS_DEBUG_STREAM("Observation jacobian: " << observation_jacobian);
     ROS_DEBUG_STREAM("Kalman gain: " << kalman_gain);
     ROS_DEBUG_STREAM("Covariances block: " << covariances_block);
@@ -176,4 +175,14 @@ std::pair<int, float> Ekf::findClosestObservation(const Observation& observation
   }
 
   return std::make_pair(closest_observation_ind, min_distance);
+}
+
+Eigen::Vector3f Ekf::getCurrentPositionEstimate()
+{
+  return means_.block<kRobotStateSize, 1>(0, 0);
+}
+
+Eigen::VectorXf Ekf::getCurrentObservationsEstimate()
+{
+  return means_.block(kRobotStateSize, 0, observations_count_ * kObservationSize, 1);
 }
