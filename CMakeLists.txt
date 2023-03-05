@@ -27,7 +27,6 @@ add_executable(ekf_slam_node
   src/ekf_slam.cpp
   src/ekf.cpp 
   src/cone_detector.cpp
-  src/util.cpp
 )
 
 target_link_libraries(ekf_slam_node

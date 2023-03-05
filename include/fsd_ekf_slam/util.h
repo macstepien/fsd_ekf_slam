@@ -1,8 +1,12 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-double BoundToMinusPiPi(double angle);
+#include <cmath>
 
+inline double BoundToMinusPiPi(double angle)
+{
+  return remainder(angle, 2.0 * M_PI);
+}
 struct Observation
 {
   float r;
