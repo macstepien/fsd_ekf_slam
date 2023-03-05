@@ -1,6 +1,6 @@
 #include <ros/ros.h>
 
-#include <ekf_slam/ekf_slam.h>
+#include <fsd_ekf_slam/ekf_slam.h>
 
 int main(int argc, char** argv)
 {

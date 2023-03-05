@@ -1,5 +1,5 @@
 <launch>
-  <node name="ekf_slam_node" pkg="ekf_slam" type="ekf_slam_node" respawn="true" output="screen">
-    <rosparam file="$(find ekf_slam)/config/ekf_slam_config.yaml" command="load" />
+  <node name="ekf_slam_node" pkg="fsd_ekf_slam" type="ekf_slam_node" respawn="true" output="screen">
+    <rosparam file="$(find fsd_ekf_slam)/config/ekf_slam_config.yaml" command="load" />
   </node>
 </launch>
