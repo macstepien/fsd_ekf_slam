@@ -31,7 +31,7 @@ Ekf::Ekf(Eigen::Vector3f initial_position, Eigen::Vector3f odometry_noise, Eigen
   means_.block<kRobotStateSize, 1>(0, 0) = initial_position;
 }
 
-void Ekf::predict(Eigen::Vector3f odometry_measurement)
+void Ekf::predict(const Eigen::Vector3f& odometry_measurement)
 {
   // Predict state estimate
 
@@ -140,7 +140,7 @@ void Ekf::updatePositionFromObservation(const Observation& observation, int matc
   }
 }
 
-std::pair<int, float> Ekf::findClosestObservation(const Observation& observation)
+std::pair<int, float> Ekf::findClosestObservation(const Observation& observation) const
 {
   if (observations_count_ == 0)
   {
@@ -177,12 +177,12 @@ std::pair<int, float> Ekf::findClosestObservation(const Observation& observation
   return std::make_pair(closest_observation_ind, min_distance);
 }
 
-Eigen::Vector3f Ekf::getCurrentPositionEstimate()
+Eigen::Vector3f Ekf::getCurrentPositionEstimate() const
 {
   return means_.block<kRobotStateSize, 1>(0, 0);
 }
 
-Eigen::VectorXf Ekf::getCurrentObservationsEstimate()
+Eigen::VectorXf Ekf::getCurrentObservationsEstimate() const
 {
   return means_.block(kRobotStateSize, 0, observations_count_ * kObservationSize, 1);
 }
