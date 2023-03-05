@@ -22,8 +22,13 @@ include_directories(
 
 link_directories(${PCL_LIBRARY_DIRS})
 
-add_executable(ekf_slam_node src/ekf_slam_node.cpp src/ekf_slam.cpp src/ekf.cpp 
-  src/cone_detector.cpp src/util.cpp)
+add_executable(ekf_slam_node 
+  src/ekf_slam_node.cpp
+  src/ekf_slam.cpp
+  src/ekf.cpp 
+  src/cone_detector.cpp
+  src/util.cpp
+)
 
 target_link_libraries(ekf_slam_node
   ${catkin_LIBRARIES}
